@@ -29,7 +29,7 @@ This package applies a small patch to a MORK checkout:
 ## Quick Start (from GitHub)
 
 ```bash
-git clone <YOUR_HELPER_PACKAGE_REPO_URL>
+git clone https://github.com/tezena/MM2-Helper.git
 cd mork_helper_ext_package
 bash setup_mork_helper_ext.sh /absolute/path/to/MORK
 ```
