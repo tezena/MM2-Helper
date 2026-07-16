@@ -314,6 +314,24 @@ pub extern "C" fn is_var(expr: *mut ExprSource, sink: *mut ExprSink) -> Result<(
     Ok(())
 }
 
+fn expr_is_exp(e: Expr) -> Result<bool, EvalError> {
+    let is_compound = matches!(unsafe { mork_expr::byte_item(*e.ptr) }, Tag::Arity(_));
+    Ok(is_compound && !expr_is_var(e)?)
+}
+
+pub extern "C" fn is_exp(expr: *mut ExprSource, sink: *mut ExprSink) -> Result<(), EvalError> {
+    let expr = unsafe { &mut *expr };
+    let sink = unsafe { &mut *sink };
+
+    let e = match consume_named_expr_1(expr, b"is_exp") {
+        Ok(e) => e,
+        Err(_) => consume_named_expr_1(expr, b"is-exp")?,
+    };
+    let value = [u8::from(expr_is_exp(e)?)];
+    sink.write(SourceItem::Symbol(&value))?;
+    Ok(())
+}
+
 pub extern "C" fn vars_to_indices(expr: *mut ExprSource, sink: *mut ExprSink) -> Result<(), EvalError> {
     let expr = unsafe { &mut *expr };
     let sink = unsafe { &mut *sink };
@@ -405,6 +423,8 @@ pub extern "C" fn falling_factorial(expr: *mut ExprSource, sink: *mut ExprSink) 
 pub fn register(scope: &mut EvalScope) {
     scope.add_func("partitions", partitions, FuncType::Pure);
     scope.add_func("is_var", is_var, FuncType::Pure);
+    scope.add_func("is_exp", is_exp, FuncType::Pure);
+    scope.add_func("is-exp", is_exp, FuncType::Pure);
     scope.add_func("vars_to_indices", vars_to_indices, FuncType::Pure);
     scope.add_func("indices_to_vars", indices_to_vars, FuncType::Pure);
     scope.add_func("freshen-pattern", freshen_pattern, FuncType::Pure);

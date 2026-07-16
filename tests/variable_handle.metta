@@ -27,3 +27,40 @@
   (, (index-sample $v))
   (O (pure (is-var-result indexed $out) $out
        (i8_to_string (is_var (' $v))))))
+(exp-sample (foo a b))
+(tuple-var-sample (var (0 0)))
+
+(exec 5
+  (, (exp-sample $v))
+  (O (pure (is-exp-result expression $out) $out
+       (i8_to_string (is_exp (' $v))))))
+
+(exec 6
+  (, (symbol-sample $v))
+  (O (pure (is-exp-result symbol $out) $out
+       (i8_to_string (is_exp (' $v))))))
+
+(exec 7
+  (, (var-sample $v))
+  (O (pure (is-exp-result raw-var $out) $out
+       (i8_to_string (is_exp (' $v))))))
+
+(exec 8
+  (, (index-sample $v))
+  (O (pure (is-exp-result var-marker $out) $out
+       (i8_to_string (is_exp (' $v))))))
+
+(exec 9
+  (, (tuple-var-sample $v))
+  (O (pure (is-exp-result tuple-var-marker $out) $out
+       (i8_to_string (is_exp (' $v))))))
+
+(exec 10
+  (, (exp-sample $v))
+  (O (pure (is-exp-alias-result expression $out) $out
+       (i8_to_string (is-exp (' $v))))))
+
+(exec 11
+  (, (tuple-var-sample $v))
+  (O (pure (is-var-result tuple-marker $out) $out
+       (i8_to_string (is_var (' $v))))))
