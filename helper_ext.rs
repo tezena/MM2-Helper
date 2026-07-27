@@ -194,6 +194,92 @@ fn write_indices_as_vars(
 
     Ok(())
 }
+
+struct SubstitutionState {
+    next_value: usize,
+}
+
+impl SubstitutionState {
+    fn new() -> Self {
+        Self { next_value: 0 }
+    }
+
+    fn write_replacement_or_original(
+        &mut self,
+        original: Expr,
+        sink: &mut ExprSink,
+        values: &[Expr],
+    ) -> Result<(), EvalError> {
+        if self.next_value >= values.len() {
+            write_expr(sink, original)?;
+        } else {
+            let replacement = values[self.next_value];
+            self.next_value += 1;
+            sink.extend_from_slice(expr_span(replacement))?;
+        }
+
+        Ok(())
+    }
+}
+
+fn write_substituted_expr(
+    e: Expr,
+    sink: &mut ExprSink,
+    values: &[Expr],
+    state: &mut SubstitutionState,
+) -> Result<(), EvalError> {
+    if state.next_value >= values.len() {
+        return write_expr(sink, e);
+    }
+
+    if var_marker_key(e)?.is_some() {
+        return state.write_replacement_or_original(e, sink, values);
+    }
+
+    unsafe {
+        match mork_expr::byte_item(*e.ptr) {
+            Tag::NewVar | Tag::VarRef(_) => {
+                state.write_replacement_or_original(e, sink, values)?;
+            }
+            Tag::SymbolSize(size) => {
+                let symbol = std::slice::from_raw_parts(e.ptr.add(1), size as usize);
+                sink.write(SourceItem::Symbol(symbol))?;
+            }
+            Tag::Arity(arity) => {
+                sink.write(SourceItem::Tag(Tag::Arity(arity)))?;
+                let mut offset = 1usize;
+                for _ in 0..arity {
+                    let child = Expr { ptr: e.ptr.add(offset) };
+                    write_substituted_expr(child, sink, values, state)?;
+                    offset += expr_span(child).len();
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn substitute_args(expr: &mut ExprSource) -> Result<(Expr, Expr), EvalError> {
+    let items = expr.consume_head_check(b"substitute")?;
+    match items {
+        1 => {
+            let pair = expr.consume::<Expr>()?;
+            let pair_items = tuple_items(pair)?;
+            if pair_items.len() != 2 {
+                return Err(EvalError::from("substitute pair must be (pattern values)"));
+            }
+            Ok((pair_items[0], pair_items[1]))
+        }
+        2 => {
+            let values = expr.consume::<Expr>()?;
+            let pattern = expr.consume::<Expr>()?;
+            Ok((pattern, values))
+        }
+        _ => Err(EvalError::from("substitute takes either one pair or two arguments")),
+    }
+}
+
 fn write_expr(sink: &mut ExprSink, expr: Expr) -> Result<(), EvalError> {
     write_normalized_expr(sink, expr_span(expr).to_vec())
 }
@@ -381,6 +467,17 @@ pub extern "C" fn indices_to_vars(expr: *mut ExprSource, sink: *mut ExprSink) ->
     let mut introduced = 0u8;
     write_indices_as_vars(e, sink, &mut labels, &mut introduced)
 }
+
+pub extern "C" fn substitute(expr: *mut ExprSource, sink: *mut ExprSink) -> Result<(), EvalError> {
+    let expr = unsafe { &mut *expr };
+    let sink = unsafe { &mut *sink };
+
+    let (pattern, values_expr) = substitute_args(expr)?;
+    let values = tuple_items(values_expr)?;
+    let mut state = SubstitutionState::new();
+    write_substituted_expr(pattern, sink, &values, &mut state)
+}
+
 pub extern "C" fn freshen_pattern(expr: *mut ExprSource, sink: *mut ExprSink) -> Result<(), EvalError> {
     let expr = unsafe { &mut *expr };
     let sink = unsafe { &mut *sink };
@@ -427,6 +524,7 @@ pub fn register(scope: &mut EvalScope) {
     scope.add_func("is-exp", is_exp, FuncType::Pure);
     scope.add_func("vars_to_indices", vars_to_indices, FuncType::Pure);
     scope.add_func("indices_to_vars", indices_to_vars, FuncType::Pure);
+    scope.add_func("substitute", substitute, FuncType::Pure);
     scope.add_func("freshen-pattern", freshen_pattern, FuncType::Pure);
     scope.add_func("factorial", factorial, FuncType::Pure);
     scope.add_func("falling_factorial", falling_factorial, FuncType::Pure);
