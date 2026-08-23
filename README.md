@@ -11,6 +11,7 @@ Current helpers included:
 - `freshen-pattern`
 - `factorial`
 - `falling_factorial`
+- `beta_cdf_f64`
 
 Tuple/list helpers such as `length`, `car`, `cdr`, `cons`, and `decons`
 are intentionally not implemented here anymore. They are provided by
@@ -33,6 +34,17 @@ Safe binomial-style usage:
     (div_i64
       (falling_factorial (i64_from_string 25) (i64_from_string 3))
       (factorial (i64_from_string 3)))))
+```
+
+Beta CDF usage:
+
+```lisp
+(pure (beta-cdf-result $out) $out
+  (f64_to_string
+    (beta_cdf_f64
+      (f64_from_string 2.0)
+      (f64_from_string 3.0)
+      (f64_from_string 0.5))))
 ```
 
 
