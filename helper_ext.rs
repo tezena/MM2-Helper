@@ -112,7 +112,6 @@ fn push_tuple_from_items(out: &mut Vec<u8>, items: &[Expr]) -> Result<(), EvalEr
     Ok(())
 }
 
-
 fn write_var_marker(sink: &mut ExprSink, index: usize) -> Result<(), EvalError> {
     let index = index.to_string();
     sink.write(SourceItem::Tag(Tag::Arity(2)))?;
@@ -138,7 +137,9 @@ fn var_marker_key(e: Expr) -> Result<Option<Vec<u8>>, EvalError> {
         }
         offset += head_len as usize;
 
-        let key = Expr { ptr: e.ptr.add(offset) };
+        let key = Expr {
+            ptr: e.ptr.add(offset),
+        };
         Ok(Some(expr_span(key).to_vec()))
     }
 }
@@ -184,7 +185,9 @@ fn write_indices_as_vars(
                 sink.write(SourceItem::Tag(Tag::Arity(arity)))?;
                 let mut offset = 1usize;
                 for _ in 0..arity {
-                    let child = Expr { ptr: e.ptr.add(offset) };
+                    let child = Expr {
+                        ptr: e.ptr.add(offset),
+                    };
                     write_indices_as_vars(child, sink, labels, introduced)?;
                     offset += expr_span(child).len();
                 }
@@ -249,7 +252,9 @@ fn write_substituted_expr(
                 sink.write(SourceItem::Tag(Tag::Arity(arity)))?;
                 let mut offset = 1usize;
                 for _ in 0..arity {
-                    let child = Expr { ptr: e.ptr.add(offset) };
+                    let child = Expr {
+                        ptr: e.ptr.add(offset),
+                    };
                     write_substituted_expr(child, sink, values, state)?;
                     offset += expr_span(child).len();
                 }
@@ -276,7 +281,9 @@ fn substitute_args(expr: &mut ExprSource) -> Result<(Expr, Expr), EvalError> {
             let pattern = expr.consume::<Expr>()?;
             Ok((pattern, values))
         }
-        _ => Err(EvalError::from("substitute takes either one pair or two arguments")),
+        _ => Err(EvalError::from(
+            "substitute takes either one pair or two arguments",
+        )),
     }
 }
 
@@ -358,7 +365,9 @@ fn factorial_i64(n: i64) -> Result<i64, EvalError> {
 
 fn falling_factorial_i64(n: i64, k: i64) -> Result<i64, EvalError> {
     if n < 0 || k < 0 {
-        return Err(EvalError::from("falling_factorial expects n >= 0 and k >= 0"));
+        return Err(EvalError::from(
+            "falling_factorial expects n >= 0 and k >= 0",
+        ));
     }
     if k > n {
         return Err(EvalError::from("falling_factorial expects k <= n"));
@@ -371,6 +380,119 @@ fn falling_factorial_i64(n: i64, k: i64) -> Result<i64, EvalError> {
             .ok_or_else(|| EvalError::from("falling_factorial overflow"))?;
     }
     Ok(result)
+}
+
+fn ln_gamma(x: f64) -> f64 {
+    const COEFFS: [f64; 9] = [
+        0.999_999_999_999_809_9,
+        676.520_368_121_885_1,
+        -1259.139_216_722_402_8,
+        771.323_428_777_653_1,
+        -176.615_029_162_140_6,
+        12.507_343_278_686_905,
+        -0.138_571_095_265_720_12,
+        9.984_369_578_019_572e-6,
+        1.505_632_735_149_311_6e-7,
+    ];
+
+    if x < 0.5 {
+        return std::f64::consts::PI.ln()
+            - (std::f64::consts::PI * x).sin().ln()
+            - ln_gamma(1.0 - x);
+    }
+
+    let z = x - 1.0;
+    let mut a = COEFFS[0];
+    for (i, coeff) in COEFFS.iter().enumerate().skip(1) {
+        a += coeff / (z + i as f64);
+    }
+    let t = z + 7.5;
+
+    0.5 * (2.0 * std::f64::consts::PI).ln() + (z + 0.5) * t.ln() - t + a.ln()
+}
+
+fn beta_continued_fraction(a: f64, b: f64, x: f64) -> Result<f64, EvalError> {
+    const MAX_ITERATIONS: usize = 200;
+    const EPSILON: f64 = 3.0e-14;
+    const MIN_FLOAT: f64 = 1.0e-300;
+
+    let qab = a + b;
+    let qap = a + 1.0;
+    let qam = a - 1.0;
+    let mut c = 1.0;
+    let mut d = 1.0 - qab * x / qap;
+    if d.abs() < MIN_FLOAT {
+        d = MIN_FLOAT;
+    }
+    d = 1.0 / d;
+    let mut h = d;
+
+    for m in 1..=MAX_ITERATIONS {
+        let m_f = m as f64;
+        let m2 = 2.0 * m_f;
+
+        let mut aa = m_f * (b - m_f) * x / ((qam + m2) * (a + m2));
+        d = 1.0 + aa * d;
+        if d.abs() < MIN_FLOAT {
+            d = MIN_FLOAT;
+        }
+        c = 1.0 + aa / c;
+        if c.abs() < MIN_FLOAT {
+            c = MIN_FLOAT;
+        }
+        d = 1.0 / d;
+        h *= d * c;
+
+        aa = -(a + m_f) * (qab + m_f) * x / ((a + m2) * (qap + m2));
+        d = 1.0 + aa * d;
+        if d.abs() < MIN_FLOAT {
+            d = MIN_FLOAT;
+        }
+        c = 1.0 + aa / c;
+        if c.abs() < MIN_FLOAT {
+            c = MIN_FLOAT;
+        }
+        d = 1.0 / d;
+        let delta = d * c;
+        h *= delta;
+
+        if (delta - 1.0).abs() < EPSILON {
+            return Ok(h);
+        }
+    }
+
+    Err(EvalError::from(
+        "beta_cdf_f64 continued fraction did not converge",
+    ))
+}
+
+fn regularized_beta_cdf(a: f64, b: f64, x: f64) -> Result<f64, EvalError> {
+    if !a.is_finite() || !b.is_finite() || !x.is_finite() {
+        return Err(EvalError::from("beta_cdf_f64 expects finite arguments"));
+    }
+    if a <= 0.0 || b <= 0.0 {
+        return Err(EvalError::from(
+            "beta_cdf_f64 expects alpha > 0 and beta > 0",
+        ));
+    }
+    if !(0.0..=1.0).contains(&x) {
+        return Err(EvalError::from("beta_cdf_f64 expects 0 <= x <= 1"));
+    }
+    if x == 0.0 {
+        return Ok(0.0);
+    }
+    if x == 1.0 {
+        return Ok(1.0);
+    }
+
+    let front =
+        (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b) + a * x.ln() + b * (1.0 - x).ln()).exp();
+
+    if x < (a + 1.0) / (a + b + 2.0) {
+        Ok(front * beta_continued_fraction(a, b, x)? / a)
+    } else {
+        Ok(1.0 - front * beta_continued_fraction(b, a, 1.0 - x)? / b)
+    }
 }
 
 pub extern "C" fn partitions(expr: *mut ExprSource, sink: *mut ExprSink) -> Result<(), EvalError> {
@@ -386,7 +508,10 @@ pub extern "C" fn partitions(expr: *mut ExprSource, sink: *mut ExprSink) -> Resu
 }
 
 fn expr_is_var(e: Expr) -> Result<bool, EvalError> {
-    let raw_var = matches!(unsafe { mork_expr::byte_item(*e.ptr) }, Tag::NewVar | Tag::VarRef(_));
+    let raw_var = matches!(
+        unsafe { mork_expr::byte_item(*e.ptr) },
+        Tag::NewVar | Tag::VarRef(_)
+    );
     Ok(raw_var || var_marker_key(e)?.is_some())
 }
 
@@ -418,7 +543,10 @@ pub extern "C" fn is_exp(expr: *mut ExprSource, sink: *mut ExprSink) -> Result<(
     Ok(())
 }
 
-pub extern "C" fn vars_to_indices(expr: *mut ExprSource, sink: *mut ExprSink) -> Result<(), EvalError> {
+pub extern "C" fn vars_to_indices(
+    expr: *mut ExprSource,
+    sink: *mut ExprSink,
+) -> Result<(), EvalError> {
     let expr = unsafe { &mut *expr };
     let sink = unsafe { &mut *sink };
 
@@ -437,7 +565,9 @@ pub extern "C" fn vars_to_indices(expr: *mut ExprSource, sink: *mut ExprSink) ->
             }
             Ok(Tag::VarRef(i)) => {
                 if i == 0 {
-                    return Err(EvalError::from("var reference points outside vars_to_indices argument"));
+                    return Err(EvalError::from(
+                        "var reference points outside vars_to_indices argument",
+                    ));
                 }
                 write_var_marker(sink, (i - 1) as usize)?;
             }
@@ -458,7 +588,10 @@ pub extern "C" fn vars_to_indices(expr: *mut ExprSource, sink: *mut ExprSink) ->
     Ok(())
 }
 
-pub extern "C" fn indices_to_vars(expr: *mut ExprSource, sink: *mut ExprSink) -> Result<(), EvalError> {
+pub extern "C" fn indices_to_vars(
+    expr: *mut ExprSource,
+    sink: *mut ExprSink,
+) -> Result<(), EvalError> {
     let expr = unsafe { &mut *expr };
     let sink = unsafe { &mut *sink };
 
@@ -478,7 +611,10 @@ pub extern "C" fn substitute(expr: *mut ExprSource, sink: *mut ExprSink) -> Resu
     write_substituted_expr(pattern, sink, &values, &mut state)
 }
 
-pub extern "C" fn freshen_pattern(expr: *mut ExprSource, sink: *mut ExprSink) -> Result<(), EvalError> {
+pub extern "C" fn freshen_pattern(
+    expr: *mut ExprSource,
+    sink: *mut ExprSink,
+) -> Result<(), EvalError> {
     let expr = unsafe { &mut *expr };
     let sink = unsafe { &mut *sink };
 
@@ -501,7 +637,10 @@ pub extern "C" fn factorial(expr: *mut ExprSource, sink: *mut ExprSink) -> Resul
     Ok(())
 }
 
-pub extern "C" fn falling_factorial(expr: *mut ExprSource, sink: *mut ExprSink) -> Result<(), EvalError> {
+pub extern "C" fn falling_factorial(
+    expr: *mut ExprSource,
+    sink: *mut ExprSink,
+) -> Result<(), EvalError> {
     let expr = unsafe { &mut *expr };
     let sink = unsafe { &mut *sink };
 
@@ -517,6 +656,26 @@ pub extern "C" fn falling_factorial(expr: *mut ExprSource, sink: *mut ExprSink) 
     Ok(())
 }
 
+pub extern "C" fn beta_cdf_f64(
+    expr: *mut ExprSource,
+    sink: *mut ExprSink,
+) -> Result<(), EvalError> {
+    let expr = unsafe { &mut *expr };
+    let sink = unsafe { &mut *sink };
+
+    let items = expr.consume_head_check(b"beta_cdf_f64")?;
+    if items != 3 {
+        return Err(EvalError::from("beta_cdf_f64 takes three arguments"));
+    }
+
+    let alpha = expr.consume::<f64>()?;
+    let beta = expr.consume::<f64>()?;
+    let x = expr.consume::<f64>()?;
+    let result = regularized_beta_cdf(alpha, beta, x)?;
+    sink.write(SourceItem::Symbol(result.to_be_bytes()[..].into()))?;
+    Ok(())
+}
+
 pub fn register(scope: &mut EvalScope) {
     scope.add_func("partitions", partitions, FuncType::Pure);
     scope.add_func("is_var", is_var, FuncType::Pure);
@@ -528,4 +687,5 @@ pub fn register(scope: &mut EvalScope) {
     scope.add_func("freshen-pattern", freshen_pattern, FuncType::Pure);
     scope.add_func("factorial", factorial, FuncType::Pure);
     scope.add_func("falling_factorial", falling_factorial, FuncType::Pure);
+    scope.add_func("beta_cdf_f64", beta_cdf_f64, FuncType::Pure);
 }
