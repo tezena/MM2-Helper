@@ -12,6 +12,7 @@ Current helpers included:
 - `factorial`
 - `falling_factorial`
 - `beta_cdf_f64`
+- `kld_f64`
 
 Tuple/list helpers such as `length`, `car`, `cdr`, `cons`, and `decons`
 are intentionally not implemented here anymore. They are provided by
@@ -45,6 +46,14 @@ Beta CDF usage:
       (f64_from_string 2.0)
       (f64_from_string 3.0)
       (f64_from_string 0.5))))
+```
+
+KLD usage over two CDF tuples:
+
+```lisp
+(pure (kld-result $out) $out
+  (f64_to_string
+    (kld_f64 (' (0.5 1.0)) (' (0.5 1.0)))))
 ```
 
 

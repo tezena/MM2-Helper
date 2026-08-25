@@ -26,6 +26,15 @@ fn tuple_items(tuple_expr: Expr) -> Result<Vec<Expr>, EvalError> {
     }
 }
 
+fn expr_symbol_bytes(e: Expr) -> Result<&'static [u8], EvalError> {
+    unsafe {
+        let Tag::SymbolSize(size) = mork_expr::byte_item(*e.ptr) else {
+            return Err(EvalError::from("expected symbol"));
+        };
+        Ok(std::slice::from_raw_parts(e.ptr.add(1), size as usize))
+    }
+}
+
 fn write_normalized_expr(sink: &mut ExprSink, mut bytes: Vec<u8>) -> Result<(), EvalError> {
     let mut out = vec![0u8; bytes.len()];
     let mut ez = ExprZipper::new(Expr {
