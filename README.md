@@ -8,6 +8,7 @@ Current helpers included:
 - `is_var`
 - `vars_to_indices`
 - `indices_to_vars`
+- `indexed_vars_in_expr`
 - `freshen-pattern`
 - `factorial`
 - `falling_factorial`
