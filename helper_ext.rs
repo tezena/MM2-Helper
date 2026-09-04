@@ -129,6 +129,35 @@ fn write_var_marker(sink: &mut ExprSink, index: usize) -> Result<(), EvalError> 
     Ok(())
 }
 
+fn collect_indexed_vars(
+    e: Expr,
+    seen: &mut HashSet<Vec<u8>>,
+    vars: &mut Vec<Vec<u8>>,
+) -> Result<(), EvalError> {
+    if var_marker_key(e)?.is_some() {
+        let bytes = expr_span(e).to_vec();
+        if seen.insert(bytes.clone()) {
+            vars.push(bytes);
+        }
+        return Ok(());
+    }
+
+    unsafe {
+        if let Tag::Arity(arity) = mork_expr::byte_item(*e.ptr) {
+            let mut offset = 1usize;
+            for _ in 0..arity {
+                let child = Expr {
+                    ptr: e.ptr.add(offset),
+                };
+                collect_indexed_vars(child, seen, vars)?;
+                offset += expr_span(child).len();
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn var_marker_key(e: Expr) -> Result<Option<Vec<u8>>, EvalError> {
     unsafe {
         let Tag::Arity(2) = mork_expr::byte_item(*e.ptr) else {
@@ -610,6 +639,30 @@ pub extern "C" fn indices_to_vars(
     write_indices_as_vars(e, sink, &mut labels, &mut introduced)
 }
 
+pub extern "C" fn indexed_vars_in_expr(
+    expr: *mut ExprSource,
+    sink: *mut ExprSink,
+) -> Result<(), EvalError> {
+    let expr = unsafe { &mut *expr };
+    let sink = unsafe { &mut *sink };
+
+    let e = consume_named_expr_1(expr, b"indexed_vars_in_expr")?;
+    let mut seen = HashSet::new();
+    let mut vars = Vec::new();
+    collect_indexed_vars(e, &mut seen, &mut vars)?;
+
+    if vars.len() > u8::MAX as usize {
+        return Err(EvalError::from("tuple arity exceeds 255"));
+    }
+
+    let mut out = Vec::new();
+    out.push(item_byte(Tag::Arity(vars.len() as u8)));
+    for var in vars {
+        out.extend_from_slice(&var);
+    }
+    write_normalized_expr(sink, out)
+}
+
 pub extern "C" fn substitute(expr: *mut ExprSource, sink: *mut ExprSink) -> Result<(), EvalError> {
     let expr = unsafe { &mut *expr };
     let sink = unsafe { &mut *sink };
@@ -692,6 +745,7 @@ pub fn register(scope: &mut EvalScope) {
     scope.add_func("is-exp", is_exp, FuncType::Pure);
     scope.add_func("vars_to_indices", vars_to_indices, FuncType::Pure);
     scope.add_func("indices_to_vars", indices_to_vars, FuncType::Pure);
+    scope.add_func("indexed_vars_in_expr", indexed_vars_in_expr, FuncType::Pure);
     scope.add_func("substitute", substitute, FuncType::Pure);
     scope.add_func("freshen-pattern", freshen_pattern, FuncType::Pure);
     scope.add_func("factorial", factorial, FuncType::Pure);
